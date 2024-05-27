@@ -7,11 +7,14 @@ RUN apk add --no-cache go
 RUN apk add --no-cache git
 # Install docker
 RUN apk add --no-cache docker
-
-# Copy the source code
-COPY . /app
 # Set the working directory
 WORKDIR /app
+# Move the go.mod and go.sum files
+COPY go.mod go.sum ./
+# Install the dependencies
+RUN go mod download
+# Copy the source code
+COPY . .
 # Build the binary
 RUN go build -o ./bin/docknat ./cmd/docknat
 # Go to the bin directory

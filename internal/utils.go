@@ -7,6 +7,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"strconv"
+	"strings"
 )
 
 type PortMapping struct {
@@ -17,37 +18,33 @@ type PortMapping struct {
 	Type        string
 }
 
-func RetrievePortMapping() ([]PortMapping, error) {
+func RetrieveDockerPortMapping() ([]PortMapping, error) {
 	cli, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
 		fmt.Println(err)
 		return nil, err
 	}
 	containers, err := cli.ContainerList(context.Background(), container.ListOptions{})
-	fmt.Println("Scanning containers...")
 	if err != nil {
 		fmt.Println(err)
 		return nil, err
 	}
 	var portMappings []PortMapping
 	for _, container := range containers {
-		id := container.ID[:12]
-		fmt.Println("Inspecting container", id)
 		for _, port := range container.Ports {
-			fmt.Printf("Port: %s:%d -> %d, %s", port.IP, port.PublicPort, port.PrivatePort, port.Type)
 			networkSettings := container.NetworkSettings
 			if networkSettings == nil {
-				fmt.Println("Container", id, "has no network settings")
 				continue
 			}
 			networks := networkSettings.Networks
 			if networks == nil {
-				fmt.Println("Container", id, "has no networks")
 				continue
 			}
 			bridgeNetwork := networks["bridge"]
 			if bridgeNetwork == nil {
-				fmt.Println("Container", id, "has no bridge network")
+				continue
+			}
+			if port.PublicPort == 0 {
 				continue
 			}
 			portMappings = append(portMappings, PortMapping{
@@ -62,7 +59,7 @@ func RetrievePortMapping() ([]PortMapping, error) {
 	return portMappings, nil
 }
 
-func RetrieveNatRules(ipt *iptables.IPTables) []string {
+func retrieveNatRules(ipt *iptables.IPTables) []string {
 	rules, _ := ipt.List("nat", "PREROUTING")
 	// Remove the first string from rules, which is the chain name
 	rules = rules[1:]
@@ -84,55 +81,78 @@ func splitRule(rule string) []string {
 	return parts
 }
 
-func ParseNatRulesToPortMappings(rules []string) []PortMapping {
+func RetrieveNatMapping(ipt *iptables.IPTables) []PortMapping {
+	rules := retrieveNatRules(ipt)
+
 	var portMappings []PortMapping
 	for _, rule := range rules {
-		// Split the rule into parts
+
+		var hash = make(map[string]string)
 		parts := splitRule(rule)
-		fmt.Println("Parts:", parts)
-		// Check if the rule is a DNAT rule
-		if parts[0] == "-p" && parts[1] == "tcp" && parts[2] == "-d" && parts[4] == "--dport" && parts[6] == "-j" && parts[7] == "DNAT" && parts[8] == "--to-destination" {
-			publicPort, _ := strconv.ParseUint(parts[5], 10, 16)
-			privatePort, _ := strconv.ParseUint(parts[9], 10, 16)
-			portMappings = append(portMappings, PortMapping{
-				IP:          parts[3],
-				PublicPort:  uint16(publicPort),
-				PrivatePort: uint16(privatePort),
-				Type:        "tcp",
-				BridgeIP:    parts[10],
-			})
-			fmt.Println("Port mapping found:", portMappings)
+
+		for index := range parts {
+			if index%2 == 0 {
+				hash[parts[index]] = parts[index+1]
+			}
 		}
+
+		// Check if the rule is a DNAT rule
+		if hash["-j"] != "DNAT" && hash["--jump"] != "DNAT" {
+			continue
+		}
+
+		publicPort, _ := strconv.ParseUint(hash["--dport"], 10, 16)
+		toDestination := hash["--to-destination"]
+		splittedToDestination := strings.Split(toDestination, ":")
+		toDestinationIP := splittedToDestination[0]
+		toDestinationPort, _ := strconv.ParseUint(splittedToDestination[1], 10, 16)
+		// Check if the rule is a DNAT rule
+		portMappings = append(portMappings, PortMapping{
+			IP:          parts[3],
+			PublicPort:  uint16(publicPort),
+			PrivatePort: uint16(toDestinationPort),
+			Type:        "tcp",
+			BridgeIP:    toDestinationIP,
+		})
 	}
 	return portMappings
 }
 
-func ComparePortMappings(portMappings, rulesMapping []PortMapping) ([]PortMapping, []PortMapping) {
+func areMappingsEqual(a, b PortMapping) bool {
+	return a.PublicPort == b.PublicPort && a.PrivatePort == b.PrivatePort
+}
+
+// ComparePortMappings compares the port mappings retrieved from the Docker API with the NAT rules
+// and returns the rules that need to be added and removed
+func ComparePortMappings(dockerMapping, rulesMapping []PortMapping) ([]PortMapping, []PortMapping) {
 	var toAdd, toRemove []PortMapping
-	for _, portMapping := range portMappings {
+	// If a docker mapping is not in the rules mapping, add it
+	for _, dockerMap := range dockerMapping {
 		found := false
-		for _, ruleMapping := range rulesMapping {
-			if portMapping == ruleMapping {
+		for _, ruleMap := range rulesMapping {
+			if areMappingsEqual(dockerMap, ruleMap) {
 				found = true
 				break
 			}
 		}
 		if !found {
-			toAdd = append(toAdd, portMapping)
+			toAdd = append(toAdd, dockerMap)
 		}
 	}
-	for _, ruleMapping := range rulesMapping {
+	// If a rule mapping is not in the docker mapping, but is in the rules mapping, remove it
+	for _, ruleMap := range rulesMapping {
 		found := false
-		for _, portMapping := range portMappings {
-			if portMapping == ruleMapping {
+		for _, dockerMap := range dockerMapping {
+			if areMappingsEqual(ruleMap, dockerMap) {
 				found = true
 				break
 			}
 		}
 		if !found {
-			toRemove = append(toRemove, ruleMapping)
+			toRemove = append(toRemove, ruleMap)
 		}
 	}
+
 	return toAdd, toRemove
 }
 
