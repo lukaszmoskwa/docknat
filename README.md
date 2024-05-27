@@ -41,3 +41,8 @@ git clone github.com/lukaszmoskwa/docknat
 cd docknat
 go mod download
 ```
+
+## TODO
+
+- [ ] Improve documentation
+- [ ] Add some tests
