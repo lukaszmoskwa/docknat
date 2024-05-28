@@ -98,6 +98,8 @@ You can check the status of the service with:
 sudo systemctl status docknat
 ```
 
+<img width="821" alt="image" src="https://github.com/lukaszmoskwa/docknat/assets/11968049/9ff34ff7-b4cf-453f-9cd3-e4312b11db1f">
+
 And read the logs with:
 
 ```bash
