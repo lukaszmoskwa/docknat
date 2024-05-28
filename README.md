@@ -34,6 +34,90 @@ At this point, you will notice that the containers on the different clients can 
 
 The scope of the project is limited to solving this issue and nothing more. I'm not planning to extend it unless I find other issues that need to be solved and cases that can benefit from this tool.
 
+## Installation
+
+This is the recommended way to install the tool. You can also download the binary from the releases page.
+
+```bash
+wget https://github.com/lukaszmoskwa/docknat/releases/latest/download/docknat && chmod +x docknat && sudo mv docknat /usr/bin
+```
+
+### Run the job as a systemd service
+
+Create a systemd service file in `/etc/systemd/system/docknat.service`:
+
+```bash
+sudo vim /etc/systemd/system/docknat.service
+```
+
+Add the following content (update the `User` field with your username):
+
+```bash
+[Unit]
+Description=Docknat
+After=network.target docker.service
+
+[Service]
+ExecStart=/usr/bin/docknat start
+Restart=always
+User=<your-user>
+Group=docker
+# Grant permissions to access Docker and iptables
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_MODULE
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_MODULE
+NoNewPrivileges=true
+# Ensure the service has access to the Docker socket
+BindPaths=/var/run/docker.sock
+# Ensure the service has access to iptables
+# This can be more complex; adjust as necessary for your specific case
+# Also consider that iptables requires elevated permissions
+ProtectSystem=full
+ProtectHome=yes
+PrivateDevices=yes
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then reload the systemd daemon and start the service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now docknat
+```
+
+And start the service:
+
+```bash
+sudo systemctl start docknat
+```
+
+You can check the status of the service with:
+
+```bash
+sudo systemctl status docknat
+```
+
+And read the logs with:
+
+```bash
+journalctl -u docknat
+```
+
+### IPTables rules
+
+The tool will write the following rules in the `nat` table:
+
+```bash
+-A PREROUTING -i <interface> -j DNAT --to-destination <container-ip>
+```
+
+And you can check them with
+
+```bash
+sudo iptables -t nat -L
+```
+
 ## Dev Setup
 
 ```bash
