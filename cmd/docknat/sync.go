@@ -30,7 +30,7 @@ func Run() {
 		for _, rule := range toRemove {
 			err = utils.RemoveNatPreroutingRule(ipt, rule)
 			if err != nil {
-				fmt.Println(err)
+				fmt.Println("Rule match not found, skipping removal")
 				continue
 			} else {
 				fmt.Printf("Removed rule: %s %s:%d -> %s:%d\n",

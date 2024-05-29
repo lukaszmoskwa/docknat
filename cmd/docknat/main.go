@@ -5,6 +5,10 @@ import (
 	"os"
 )
 
+var (
+	Version string
+)
+
 type Config struct {
 	// Configuration for docknat
 	path string
@@ -14,6 +18,7 @@ type Config struct {
 func StartDocknat(config Config) {
 	fmt.Println("Starting docknat service")
 	fmt.Println("Configuration file:", config.path)
+	fmt.Println("Version:", string(Version))
 	Run()
 }
 

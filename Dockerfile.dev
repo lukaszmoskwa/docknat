@@ -16,7 +16,7 @@ RUN go mod download
 # Copy the source code
 COPY . .
 # Build the binary
-RUN go build -o ./bin/docknat ./cmd/docknat
+RUN go build -ldflags "-X main.Version=$(cat VERSION)" -o ./bin/docknat ./cmd/docknat
 # Go to the bin directory
 WORKDIR /app/bin
 # Run the binary

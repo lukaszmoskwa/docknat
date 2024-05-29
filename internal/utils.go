@@ -157,7 +157,12 @@ func ComparePortMappings(dockerMapping, rulesMapping []PortMapping) ([]PortMappi
 }
 
 func AddNatPreroutingRule(ipt *iptables.IPTables, mapping PortMapping) error {
-	return ipt.AppendUnique("nat", "PREROUTING", "-p", mapping.Type, "--dport", strconv.Itoa(int(mapping.PublicPort)), "--jump", "DNAT", "--to-destination", fmt.Sprintf("%s:%d", mapping.BridgeIP, mapping.PrivatePort))
+	// Append both the UDP and TCP rules
+	tcpError := ipt.AppendUnique("nat", "PREROUTING", "-p", "tcp", "--dport", strconv.Itoa(int(mapping.PublicPort)), "--jump", "DNAT", "--to-destination", fmt.Sprintf("%s:%d", mapping.BridgeIP, mapping.PrivatePort))
+	if tcpError != nil {
+		return tcpError
+	}
+	return ipt.AppendUnique("nat", "PREROUTING", "-p", "udp", "--dport", strconv.Itoa(int(mapping.PublicPort)), "--jump", "DNAT", "--to-destination", fmt.Sprintf("%s:%d", mapping.BridgeIP, mapping.PrivatePort))
 }
 
 func ResetNatRules(ipt *iptables.IPTables) error {
@@ -165,5 +170,9 @@ func ResetNatRules(ipt *iptables.IPTables) error {
 }
 
 func RemoveNatPreroutingRule(ipt *iptables.IPTables, mapping PortMapping) error {
-	return ipt.Delete("nat", "PREROUTING", "-p", mapping.Type, "--dport", strconv.Itoa(int(mapping.PublicPort)), "--jump", "DNAT", "--to-destination", fmt.Sprintf("%s:%d", mapping.BridgeIP, mapping.PrivatePort))
+	tcpError := ipt.Delete("nat", "PREROUTING", "-p", "tcp", "--dport", strconv.Itoa(int(mapping.PublicPort)), "--jump", "DNAT", "--to-destination", fmt.Sprintf("%s:%d", mapping.BridgeIP, mapping.PrivatePort))
+	if tcpError != nil {
+		return tcpError
+	}
+	return ipt.Delete("nat", "PREROUTING", "-p", "udp", "--dport", strconv.Itoa(int(mapping.PublicPort)), "--jump", "DNAT", "--to-destination", fmt.Sprintf("%s:%d", mapping.BridgeIP, mapping.PrivatePort))
 }
