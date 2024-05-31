@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
-	"time"
-
 	"github.com/coreos/go-iptables/iptables"
+	"github.com/docker/docker/client"
 	utils "github.com/lukaszmoskwa/docknat/internal"
+	"time"
 )
 
 func Run() {
@@ -13,6 +13,17 @@ func Run() {
 	ipt, err := iptables.New()
 	if err != nil {
 		fmt.Println(err)
+		return
+	}
+	// Create a new Utils instance
+	dockerCli, dockerErr := client.NewClientWithOpts(client.FromEnv)
+	if dockerErr != nil {
+		fmt.Println(dockerErr)
+		return
+	}
+	utils, utilsErr := utils.NewUtils(ipt, dockerCli)
+	if utilsErr != nil {
+		fmt.Println(utilsErr)
 		return
 	}
 	// Run the job every 2 seconds
@@ -24,27 +35,27 @@ func Run() {
 			continue
 		}
 		// Retrieve the NAT rules
-		rulesMapping := utils.RetrieveNatMapping(ipt)
+		rulesMapping := utils.RetrieveNatMapping()
 		// Compare the port mappings with the NAT rules and remove the rules that are not needed
 		toAdd, toRemove := utils.ComparePortMappings(dockerMapping, rulesMapping)
 		for _, rule := range toRemove {
-			err = utils.RemoveNatPreroutingRule(ipt, rule)
+			err = utils.RemoveNatPreroutingRule(rule)
 			if err != nil {
 				fmt.Println("Rule match not found, skipping removal")
 				continue
 			} else {
-				fmt.Printf("Removed rule: %s %s:%d -> %s:%d\n",
-					rule.Type, rule.IP, rule.PublicPort, rule.BridgeIP, rule.PrivatePort)
+				fmt.Printf("Removed rule: %s:%d -> %s:%d\n",
+					rule.IP, rule.PublicPort, rule.BridgeIP, rule.PrivatePort)
 			}
 		}
 		for _, rule := range toAdd {
-			err = utils.AddNatPreroutingRule(ipt, rule)
+			err = utils.AddNatPreroutingRule(rule)
 			if err != nil {
 				fmt.Println(err)
 				continue
 			} else {
-				fmt.Printf("Added rule: %s %s:%d -> %s:%d\n",
-					rule.Type, rule.IP, rule.PublicPort, rule.BridgeIP, rule.PrivatePort)
+				fmt.Printf("Added rule: %s:%d -> %s:%d\n",
+					rule.IP, rule.PublicPort, rule.BridgeIP, rule.PrivatePort)
 			}
 		}
 	}

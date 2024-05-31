@@ -3,28 +3,47 @@ package utils
 import (
 	"context"
 	"fmt"
-	"github.com/coreos/go-iptables/iptables"
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/client"
 	"strconv"
 	"strings"
 )
+
+type IPTabler interface {
+	AppendUnique(table, chain string, rulespec ...string) error
+	List(table, chain string) ([]string, error)
+	Delete(table, chain string, rulespec ...string) error
+}
+
+type DockerClient interface {
+	ContainerList(ctx context.Context, options container.ListOptions) ([]types.Container, error)
+}
+
+type Utils struct {
+	IPTables     IPTabler
+	DockerClient DockerClient
+}
 
 type PortMapping struct {
 	BridgeIP    string
 	IP          string
 	PublicPort  uint16
 	PrivatePort uint16
-	Type        string
 }
 
-func RetrieveDockerPortMapping() ([]PortMapping, error) {
-	cli, err := client.NewClientWithOpts(client.FromEnv)
-	if err != nil {
-		fmt.Println(err)
-		return nil, err
-	}
-	containers, err := cli.ContainerList(context.Background(), container.ListOptions{})
+func NewUtils(
+	ipt IPTabler,
+	cli DockerClient,
+) (*Utils, error) {
+	return &Utils{
+		IPTables:     ipt,
+		DockerClient: cli,
+	}, nil
+}
+
+func (u *Utils) RetrieveDockerPortMapping() ([]PortMapping, error) {
+
+	containers, err := u.DockerClient.ContainerList(context.Background(), container.ListOptions{})
 	if err != nil {
 		fmt.Println(err)
 		return nil, err
@@ -51,7 +70,6 @@ func RetrieveDockerPortMapping() ([]PortMapping, error) {
 				IP:          port.IP,
 				PublicPort:  port.PublicPort,
 				PrivatePort: port.PrivatePort,
-				Type:        port.Type,
 				BridgeIP:    container.NetworkSettings.Networks["bridge"].IPAddress,
 			})
 		}
@@ -59,8 +77,8 @@ func RetrieveDockerPortMapping() ([]PortMapping, error) {
 	return portMappings, nil
 }
 
-func retrieveNatRules(ipt *iptables.IPTables) []string {
-	rules, _ := ipt.List("nat", "PREROUTING")
+func (u *Utils) retrieveNatRules() []string {
+	rules, _ := u.IPTables.List("nat", "PREROUTING")
 	// Remove the first string from rules, which is the chain name
 	rules = rules[1:]
 	return rules
@@ -81,8 +99,8 @@ func splitRule(rule string) []string {
 	return parts
 }
 
-func RetrieveNatMapping(ipt *iptables.IPTables) []PortMapping {
-	rules := retrieveNatRules(ipt)
+func (u *Utils) RetrieveNatMapping() []PortMapping {
+	rules := u.retrieveNatRules()
 
 	var portMappings []PortMapping
 	for _, rule := range rules {
@@ -111,7 +129,6 @@ func RetrieveNatMapping(ipt *iptables.IPTables) []PortMapping {
 			IP:          parts[3],
 			PublicPort:  uint16(publicPort),
 			PrivatePort: uint16(toDestinationPort),
-			Type:        "tcp",
 			BridgeIP:    toDestinationIP,
 		})
 	}
@@ -124,7 +141,7 @@ func areMappingsEqual(a, b PortMapping) bool {
 
 // ComparePortMappings compares the port mappings retrieved from the Docker API with the NAT rules
 // and returns the rules that need to be added and removed
-func ComparePortMappings(dockerMapping, rulesMapping []PortMapping) ([]PortMapping, []PortMapping) {
+func (*Utils) ComparePortMappings(dockerMapping, rulesMapping []PortMapping) ([]PortMapping, []PortMapping) {
 	var toAdd, toRemove []PortMapping
 	// If a docker mapping is not in the rules mapping, add it
 	for _, dockerMap := range dockerMapping {
@@ -156,23 +173,19 @@ func ComparePortMappings(dockerMapping, rulesMapping []PortMapping) ([]PortMappi
 	return toAdd, toRemove
 }
 
-func AddNatPreroutingRule(ipt *iptables.IPTables, mapping PortMapping) error {
+func (u *Utils) AddNatPreroutingRule(mapping PortMapping) error {
 	// Append both the UDP and TCP rules
-	tcpError := ipt.AppendUnique("nat", "PREROUTING", "-p", "tcp", "--dport", strconv.Itoa(int(mapping.PublicPort)), "--jump", "DNAT", "--to-destination", fmt.Sprintf("%s:%d", mapping.BridgeIP, mapping.PrivatePort))
+	tcpError := u.IPTables.AppendUnique("nat", "PREROUTING", "-p", "tcp", "--dport", strconv.Itoa(int(mapping.PublicPort)), "--jump", "DNAT", "--to-destination", fmt.Sprintf("%s:%d", mapping.BridgeIP, mapping.PrivatePort))
 	if tcpError != nil {
 		return tcpError
 	}
-	return ipt.AppendUnique("nat", "PREROUTING", "-p", "udp", "--dport", strconv.Itoa(int(mapping.PublicPort)), "--jump", "DNAT", "--to-destination", fmt.Sprintf("%s:%d", mapping.BridgeIP, mapping.PrivatePort))
+	return u.IPTables.AppendUnique("nat", "PREROUTING", "-p", "udp", "--dport", strconv.Itoa(int(mapping.PublicPort)), "--jump", "DNAT", "--to-destination", fmt.Sprintf("%s:%d", mapping.BridgeIP, mapping.PrivatePort))
 }
 
-func ResetNatRules(ipt *iptables.IPTables) error {
-	return ipt.ClearChain("nat", "PREROUTING")
-}
-
-func RemoveNatPreroutingRule(ipt *iptables.IPTables, mapping PortMapping) error {
-	tcpError := ipt.Delete("nat", "PREROUTING", "-p", "tcp", "--dport", strconv.Itoa(int(mapping.PublicPort)), "--jump", "DNAT", "--to-destination", fmt.Sprintf("%s:%d", mapping.BridgeIP, mapping.PrivatePort))
+func (u *Utils) RemoveNatPreroutingRule(mapping PortMapping) error {
+	tcpError := u.IPTables.Delete("nat", "PREROUTING", "-p", "tcp", "--dport", strconv.Itoa(int(mapping.PublicPort)), "--jump", "DNAT", "--to-destination", fmt.Sprintf("%s:%d", mapping.BridgeIP, mapping.PrivatePort))
 	if tcpError != nil {
 		return tcpError
 	}
-	return ipt.Delete("nat", "PREROUTING", "-p", "udp", "--dport", strconv.Itoa(int(mapping.PublicPort)), "--jump", "DNAT", "--to-destination", fmt.Sprintf("%s:%d", mapping.BridgeIP, mapping.PrivatePort))
+	return u.IPTables.Delete("nat", "PREROUTING", "-p", "udp", "--dport", strconv.Itoa(int(mapping.PublicPort)), "--jump", "DNAT", "--to-destination", fmt.Sprintf("%s:%d", mapping.BridgeIP, mapping.PrivatePort))
 }

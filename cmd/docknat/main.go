@@ -9,15 +9,8 @@ var (
 	Version string
 )
 
-type Config struct {
-	// Configuration for docknat
-	path string
-	// Configuration for iptables
-}
-
-func StartDocknat(config Config) {
+func StartDocknat() {
 	fmt.Println("Starting docknat service")
-	fmt.Println("Configuration file:", config.path)
 	fmt.Println("Version:", string(Version))
 	Run()
 }
