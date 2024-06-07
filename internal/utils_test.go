@@ -189,3 +189,22 @@ func TestRetrieveDockerContainerMapping(t *testing.T) {
 		t.Error("Error retrieving Docker container mapping")
 	}
 }
+
+func TestWithIncompleteExistingRules(t *testing.T) {
+	// 2 udp rules are already existing but the tcp rules are missing
+	mockIpTablesRules := []string{
+		"-A PREROUTING -p udp -m udp --dport 30134 -j DNAT --to-destination 172.17.0.5:8777",
+		"-A PREROUTING -p udp -m udp --dport 20023 -j DNAT --to-destination 172.17.0.4:9090",
+		"-A PREROUTING -p udp -m udp --dport 5432 -j DNAT --to-destination 172.17.0.2:5432",
+		"-A PREROUTING -p tcp -m tcp --dport 5432 -j DNAT --to-destination 172.17.0.2:5432",
+		"-A PREROUTING -p tcp -m tcp --dport 25790 -j DNAT --to-destination 172.17.0.8:80",
+		"-A PREROUTING -p udp -m udp --dport 25790 -j DNAT --to-destination 172.17.0.8:80",
+		"-A PREROUTING -p tcp -m tcp --dport 25412 -j DNAT --to-destination 172.17.0.6:80",
+		"-A PREROUTING -p udp -m udp --dport 25412 -j DNAT --to-destination 172.17.0.6:80",
+	}
+	utils := NewMockUtils(mockIpTablesRules)
+	natMappings := utils.RetrieveNatMapping()
+	if len(natMappings) != 8 {
+		t.Error("Incorrect number of NAT mappings")
+	}
+}

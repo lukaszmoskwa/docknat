@@ -58,7 +58,8 @@ Description=Docknat
 After=network.target docker.service
 
 [Service]
-ExecStart=/usr/bin/docknat start
+Type=oneshot
+ExecStart=/usr/bin/docknat run
 Restart=always
 User=<your-user>
 Group=docker
@@ -77,6 +78,21 @@ PrivateDevices=yes
 
 [Install]
 WantedBy=multi-user.target
+```
+
+Then create the timer file in `/etc/systemd/system/docknat.timer`:
+
+```bash
+[Unit]
+Description=Run docknat every 2 seconds
+
+[Timer]
+OnBootSec=2sec
+OnUnitActiveSec=2sec
+Unit=docknat.service
+
+[Install]
+WantedBy=timers.target
 ```
 
 Then reload the systemd daemon and start the service:

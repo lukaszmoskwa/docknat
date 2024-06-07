@@ -13,7 +13,7 @@ func RunCli() *cli.App {
 		},
 		Commands: []*cli.Command{
 			{
-				Name:  "start",
+				Name:  "run",
 				Usage: "Start the docknat service",
 				Action: func(c *cli.Context) error {
 					StartDocknat()
