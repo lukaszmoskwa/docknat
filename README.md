@@ -99,13 +99,15 @@ Then reload the systemd daemon and start the service:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now docknat
+sudo systemctl enable --now docknat.service
+sudo systemctl enable --now docknat.timer
 ```
 
 And start the service:
 
 ```bash
-sudo systemctl start docknat
+sudo systemctl start docknat.service
+sudo systemctl start docknat.timer
 ```
 
 You can check the status of the service with:
