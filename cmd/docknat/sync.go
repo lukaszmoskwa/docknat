@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"github.com/coreos/go-iptables/iptables"
 	"github.com/docker/docker/client"
@@ -8,6 +9,7 @@ import (
 )
 
 func Run() {
+
 	// Create a new IPTables instance
 	ipt, err := iptables.New()
 	if err != nil {
@@ -20,6 +22,8 @@ func Run() {
 		fmt.Println(dockerErr)
 		return
 	}
+	ctx := context.Background()
+	dockerCli.NegotiateAPIVersion(ctx)
 	utils, utilsErr := utils.NewUtils(ipt, dockerCli)
 	if utilsErr != nil {
 		fmt.Println(utilsErr)
